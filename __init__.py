@@ -20,7 +20,6 @@ from . import core
 from . import imports
 from . import math
 from . import Input
-from . import Shapes
 from . import utils
 
-__all__ = ["shader", "core", "imports", "math", "Input", "Shapes", "utils"]
+__all__ = ["shader", "core", "imports", "math", "Input", "utils"]

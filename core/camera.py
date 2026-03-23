@@ -1,7 +1,8 @@
 from __future__ import annotations
 from typing import cast, Tuple
 import numpy as np
-import engine
+import ReikiGL
+from ..Input import InputManager
 import moderngl as mgl
 from abc import ABC, abstractmethod
 
@@ -28,7 +29,7 @@ class BaseCamera(ABC):
         self.aspect = 16/9
 
     @abstractmethod
-    def update(self, dt, input: engine.Input.InputManager):
+    def update(self, dt, input: InputManager):
         pass
 
 
@@ -96,7 +97,7 @@ class Camera(BaseCamera):
         M[2, 3] =  np.dot(f, self.position)
         return M
     
-    def update(self, dt, input: engine.Input.InputManager) -> None:
+    def update(self, dt, input: InputManager) -> None:
         if input.is_down("forward"):
             self.position += self.front * self.speed
 
@@ -203,7 +204,7 @@ class BlenderCamera(BaseCamera):
         return forward, right, up
 
 
-    def update(self, dt, input: engine.Input.InputManager) -> None:
+    def update(self, dt, input: InputManager) -> None:
         """
         Core logic loop: Handles zooming, panning (Shift+Mid), and orbiting (Mid).
         """
