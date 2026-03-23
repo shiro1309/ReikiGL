@@ -1,20 +1,34 @@
 import pyglet
+from enum import IntFlag, auto
+import moderngl as mgl
 
 from typing import Callable, Optional
-import engine
+from ..Input import InputManager
+from .constants import ReikiFlags
+
+
 
 class AppWindow(pyglet.window.Window):
     
-    def __init__(self, width: int=800, height: int=600, title: str="Pyglet OOP App", vsync: bool= False, *args, **kwargs) -> None:
+    def __init__(self, width: int=800, height: int=600, title: str="Pyglet OOP App", vsync: bool= False, flags: ReikiFlags=ReikiFlags.NONE, *args, **kwargs) -> None:
         super().__init__(width=width, height=height, caption=title, vsync=vsync, *args, **kwargs)
+        
+        self.ctx = mgl.create_context()
+        
+        if ReikiFlags.DEPTH_TEST in flags:
+            self.ctx.enable(mgl.DEPTH_TEST)
+            
+        if ReikiFlags.CULL_FACE in flags:
+            self.ctx.enable(mgl.CULL_FACE)
+            
+        if ReikiFlags.BLEND in flags:
+            self.ctx.enable(mgl.BLEND)
 
         
 
-        self.input: engine.Input.InputManager = engine.Input.InputManager()  # reference back to the applicatio
+        self.input: InputManager = InputManager()  # reference back to the applicatio
         self.keys = pyglet.window.key.KeyStateHandler()
         self.push_handlers(self.keys)
-        
-        self.batch = pyglet.graphics.Batch()
 
 
     # --------------- Screen Events ---------------

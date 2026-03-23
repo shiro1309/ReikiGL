@@ -7,6 +7,11 @@ Usage examples:
     from engine.shader import Mesh
     from engine.math import Transform
 """
+from .core.constants import ReikiFlags
+DEPTH_TEST = ReikiFlags.DEPTH_TEST
+CULL_FACE = ReikiFlags.CULL_FACE
+BLEND = ReikiFlags.BLEND
+NONE = ReikiFlags.NONE
 
 # Re-export subpackages so `engine.shader` works.
 #from . import utils
