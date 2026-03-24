@@ -59,7 +59,6 @@ class Line3D:
     def _build_buffers(self) -> None:
         v0 = (*self.p0, *self.color, *self.translation)
         v1 = (*self.p1, *self.color, *self.translation)
-        print(v0)
 
         vertex_data = np.array([*v0, *v1], dtype="f4")
 
@@ -117,7 +116,7 @@ class Line3D:
 
     def draw(self, model: np.ndarray, camera: Camera) -> None:
         """All matrices MUST be numpy float32 4x4."""
-        
+
         self.ctx.enable(mgl.BLEND)
         self.ctx.blend_func = mgl.SRC_ALPHA, mgl.ONE_MINUS_SRC_ALPHA
         

@@ -213,7 +213,7 @@ class BlenderCamera(BaseCamera):
 
         _, right, up = self.get_orientation_vectors()
 
-        if input.is_down("shift") and input.is_mouse_drag("middle"):
+        if input.is_down("shift") and input.is_mouse_drag("right"):
             pan_speed = self.distance * 0.0015
 
             dx = -input.mouse_dx * pan_speed
@@ -222,7 +222,7 @@ class BlenderCamera(BaseCamera):
             pan_vector = (right * dx) + (up * dy)
             self.target += pan_vector
 
-        elif input.is_mouse_drag("middle"):
+        elif input.is_mouse_drag("right"):
             self.yaw -= input.mouse_dx * self.sensitivity
             self.pitch -= input.mouse_dy * self.sensitivity
 
