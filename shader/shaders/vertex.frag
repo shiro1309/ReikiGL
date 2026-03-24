@@ -1,15 +1,8 @@
 
-#version 150 core
+#version 330
+in vec4 vertex_colors; // Må være vec4 for å inkludere alpha
+out vec4 f_color;
 
-in vec4 vertex_colors;
-out vec4 final_color;
-
-void main()
-{
-    // Write the vertex color
-    final_color = vertex_colors;
-
-    // Alpha test style discard
-    if (final_color.a < 0.01)
-        discard;
+void main() {
+    f_color = vertex_colors; // Her blir v_color.a (alpha) brukt
 }
