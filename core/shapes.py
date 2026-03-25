@@ -247,8 +247,6 @@ class FilledCircle3D:
 
         self.vao.render(mode=mgl.TRIANGLE_FAN)
 
-<<<<<<< HEAD
-=======
 
 class Cylinder3D:
     def __init__(self, ctx: mgl.Context, program: mgl.Program, 
@@ -415,4 +413,3 @@ class Cylinder3D:
         self.vao.render(mgl.TRIANGLE_FAN, vertices=self.cap_verts, first=self.top_offset)
         self.vao.render(mgl.TRIANGLE_STRIP, vertices=self.side_verts, first=self.side_offset)
 
->>>>>>> 4043f29 ( Changes to be committed:)
