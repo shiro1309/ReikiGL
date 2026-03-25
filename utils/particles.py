@@ -1,5 +1,5 @@
 import numpy as np
-import ReikiGL
+from ..math import *
 from typing import Deque
 from collections import deque
 import time
@@ -74,12 +74,12 @@ class DynamicParticalSystem:
             # if changes to the angle update the quaternion
             if theta > 0:
                 axis = ang_vel / np.linalg.norm(ang_vel)
-                quat = ReikiGL.math.rotate_quaternion(quat, theta, axis)
+                quat = rotate_quaternion(quat, theta, axis)
 
             # update the model data
-            T = ReikiGL.math.translate(pos)
-            S = ReikiGL.math.scale(self.np_particles[i, 8:11])
-            R = ReikiGL.math.quat_rotation_matrix(quat)
+            T = translate(pos)
+            S = scale(self.np_particles[i, 8:11])
+            R = quat_rotation_matrix(quat)
 
             # Model = T * R * S (column-vector convention)
             P = T @ R @ S
@@ -126,12 +126,12 @@ class DynamicParticalSystem:
             active_ang = ang_vel[moving]
             theta = np.linalg.norm(active_ang, axis=1, keepdims=True) * dt
 
-            quat[moving] = ReikiGL.math.rotate_quaternion_vectorized(quat[moving], theta, active_ang)
+            quat[moving] = rotate_quaternion_vectorized(quat[moving], theta, active_ang)
 
 
-        T = ReikiGL.math.translate_vectorized(pos)
-        S = ReikiGL.math.scale_vectorized(scale)
-        R = ReikiGL.math.quat_rotation_matrix_vectorized(quat)
+        T = translate_vectorized(pos)
+        S = scale_vectorized(scale)
+        R = quat_rotation_matrix_vectorized(quat)
 
         model_matrices = T @ R @ S
     

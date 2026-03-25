@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import cast, Tuple
 import numpy as np
-import ReikiGL
 from ..Input import InputManager
 import moderngl as mgl
 from abc import ABC, abstractmethod
