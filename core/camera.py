@@ -3,7 +3,7 @@ from typing import cast, Tuple
 import numpy as np
 from ..Input import InputManager
 import moderngl as mgl
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod 
 
 
 def normalize(v: np.ndarray) -> np.ndarray:
@@ -30,8 +30,6 @@ class BaseCamera(ABC):
     @abstractmethod
     def update(self, dt, input: InputManager):
         pass
-
-
 
 
     def get_view_matrix(self) -> np.ndarray:

@@ -1,53 +1,40 @@
 import numpy as np
 from typing import Tuple, Optional
+import numpy.typing as npt
 
-def reflect(incident: np.ndarray, normal: np.ndarray) -> np.ndarray:
+
+
+def reflect(incident: npt.NDArray[np.float32], normal: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     incident /= np.linalg.norm(incident)
     normal /= np.linalg.norm(normal)
     return incident - 2*(np.dot(normal, incident)) * normal
 
-def refract(incident: np.ndarray, normal: np.ndarray, n1: float=1.0, n2: float=1.5) -> np.ndarray:
+def refract(incident: npt.NDArray[np.float32], normal: npt.NDArray[np.float32], n1: float=1.0, n2: float=1.5) -> npt.NDArray[np.float32]:
     eta = n1/n2
     incident /= np.linalg.norm(incident)
     normal /= np.linalg.norm(normal)
 
-    dot_ni = np.dot(normal, incident)
-    check = 1.0 - eta**2 * (1.0 - dot_ni**2)
-    if check < 0:
+    cos_i = np.dot(normal, incident)
+    sin2_t = 1.0 - eta**2 * (1.0 - cos_i**2)
+    if sin2_t < 0.0:
         return reflect(incident, normal)
-    else:
-        return eta * incident - (eta * dot_ni + np.sqrt(check)) * normal
-
-def handle_refraction(ray_vec, actual_normal, n1, n2):
-    eta = n1 / n2
-    # Since actual_normal now always faces the ray, cos_i is always positive
-    cos_i = -np.dot(actual_normal, ray_vec) 
     
-    sin2_t = eta**2 * (1.0 - cos_i**2)
-    
-    if sin2_t > 1.0:
-        return None  # Total Internal Reflection
-        
-    cos_t = np.sqrt(1.0 - sin2_t)
-    return eta * ray_vec + (eta * cos_i - cos_t) * actual_normal
-
-normal = np.array([0,1,0], dtype=np.float32)
-incidentVector = np.array([0.707,-0.707,0], dtype=np.float32)
+    return eta * incident - (eta * cos_i + np.sqrt(sin2_t)) * normal
 
 
-def sjekk_rotert_sirkel(start: np.ndarray[np.float32], 
-                        retning: np.ndarray[np.float32], 
-                        senter: np.ndarray[np.float32], 
-                        normal: np.ndarray[np.float32], 
+def sjekk_rotert_sirkel(start: npt.NDArray[np.float32], 
+                        retning: npt.NDArray[np.float32], 
+                        senter: npt.NDArray[np.float32], 
+                        normal: npt.NDArray[np.float32], 
                         radius: float
-                        ) ->Tuple[bool, Optional[np.ndarray[np.float32]], Optional[np.float32]]:
+                        ) ->Tuple[bool, Optional[npt.NDArray[np.float32]], Optional[np.float32]]:
     """
     Sjekker kollisjon med en fylt sirkel i 3D.
     - normal: Vektoren som står vinkelrett på sirkelens flate (f.eks [0,0,1] for flat)
     """
     # Normaliser vektorer for sikkerhets skyld
-    retning = retning / np.linalg.norm(retning)
-    normal = normal / np.linalg.norm(normal)
+    retning = (retning / np.linalg.norm(retning)).astype(np.float32)
+    normal = (normal / np.linalg.norm(normal)).astype(np.float32)
 
     # 1. Finn punktet der linjen krysser sirkelens plan
     # Formel: t = ((senter - start) dot normal) / (retning dot normal)

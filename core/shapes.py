@@ -4,7 +4,7 @@ import moderngl as mgl
 from .camera import Camera, BaseCamera
 from ..shader import import_shader
 from dataclasses import dataclass
-from ..math import *
+from ..math import transform
 
 class Grid:
     def __init__(self, shader, ctx: mgl.Context) -> None:
@@ -115,7 +115,7 @@ class Line3D:
 
 
 
-    def draw(self, model: np.ndarray, camera: Camera) -> None:
+    def draw(self, model: np.ndarray, camera: BaseCamera) -> None:
         """All matrices MUST be numpy float32 4x4."""
 
         self.ctx.enable(mgl.BLEND)
@@ -184,7 +184,8 @@ class Circle3D:
         self.ctx.disable(mgl.CULL_FACE)
 
         if "model" in self.program:
-            self.program["model"].write(model.astype('f4').tobytes())
+            model_data = cast(mgl.Uniform, self.program["model"])
+            model_data.write(model.astype('f4').tobytes())
         
         camera.apply_to_shader(self.program, "u_view", "u_projection")
 
@@ -241,7 +242,8 @@ class FilledCircle3D:
         self.ctx.disable(mgl.CULL_FACE)
 
         if "model" in self.program:
-            self.program["model"].write(model.astype('f4').tobytes())
+            model_data = cast(mgl.Uniform, self.program["model"])
+            model_data.write(model.astype('f4').tobytes())
         
         camera.apply_to_shader(self.program, "u_view", "u_projection")
 
@@ -277,16 +279,16 @@ class Cylinder3D:
         self.update_matrix()
         self._build_buffers()
 
-    def update_matrix(self):
+    def update_matrix(self) -> None:
         # 1. Full World Matrix (T * R * S)
         # Using the explicit compose_model provided in the previous turn
-        self.full_world_matrix = compose_model(self.position, self.rotation, self.scale)
+        self.full_world_matrix = transform.compose_model(self.position, self.rotation, self.scale)
         
         # 2. Inverse Matrix for Raycasting
         self.inv_full_matrix = np.linalg.inv(self.full_world_matrix)
         
         # 3. GPU Matrix (No Translation for Hybrid Shader)
-        self.gpu_model_matrix = compose_model((0,0,0), self.rotation, self.scale)
+        self.gpu_model_matrix = transform.compose_model((0,0,0), self.rotation, self.scale)
 
     def _build_buffers(self) -> None:
         vertices = []
@@ -405,7 +407,8 @@ class Cylinder3D:
 
         if "model" in self.program:
             # Send ONLY the rotation matrix to the GPU
-            self.program["model"].write(self.gpu_model_matrix.astype('f4').tobytes())
+            model_data = cast(mgl.Uniform, self.program["model"])
+            model_data.write(self.gpu_model_matrix.astype('f4').tobytes())
         
         camera.apply_to_shader(self.program, "u_view", "u_projection")
 
