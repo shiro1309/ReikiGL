@@ -31,6 +31,10 @@ class BaseCamera(ABC):
     def update(self, dt, input: InputManager):
         pass
 
+    @abstractmethod
+    def update_position(self) -> None:
+        pass
+
 
     def get_view_matrix(self) -> np.ndarray:
         f = normalize(self.target - self.position)               # forward (towards -Z in view if you prefer)
@@ -61,6 +65,10 @@ class BaseCamera(ABC):
         return P
 
     def apply_to_shader(self, prog: mgl.Program, view, proj) -> None:
+        """
+        Writes the camera matrices to the GPU shader.
+        Uses .T (transpose) because ModernGL/OpenGL expects Column-Major matrices.
+        """
         view_data = cast(mgl.Uniform, prog[view])
         view_data.write(self.get_view_matrix().T.astype('f4').tobytes())
 
@@ -109,7 +117,7 @@ class Camera(BaseCamera):
 
         if input.is_mouse_drag("right"):
             self.rotate(input.mouse_dx, input.mouse_dy)
-            self.update_vectors()
+            self.update_position()
 
     def right(self) -> np.ndarray:
         return normalize(np.cross(self.front, self.up))
@@ -120,7 +128,7 @@ class Camera(BaseCamera):
         self.pitch = np.clip(self.pitch, -89.0, 89.0)
 
 
-    def update_vectors(self) -> None:
+    def update_position(self) -> None:
         # Beregn ny front-vektor basert på vinkler
         y = np.radians(self.yaw)
         p = np.radians(self.pitch)
@@ -226,14 +234,3 @@ class BlenderCamera(BaseCamera):
             self.pitch = np.clip(self.pitch, -89, 89)
 
         self.update_position()
-
-    def apply_to_shader(self, prog: mgl.Program, view, proj) -> None:
-        """
-        Writes the camera matrices to the GPU shader.
-        Uses .T (transpose) because ModernGL/OpenGL expects Column-Major matrices.
-        """
-        view_data = cast(mgl.Uniform, prog[view])
-        view_data.write(self.get_view_matrix().T.astype('f4').tobytes())
-
-        proj_data = cast(mgl.Uniform, prog[proj])
-        proj_data.write(self.get_projection_matrix().T.astype('f4').tobytes())
