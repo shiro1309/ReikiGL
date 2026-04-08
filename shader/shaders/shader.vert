@@ -11,7 +11,8 @@ layout (std430, binding = 0) buffer ModelMatrices {
     mat4 models[];
 };
 
-uniform mat4 u_view_projection;
+uniform mat4 projection;
+uniform mat4 view;
 
 out vec3 v_norm;
 out vec3 v_pos;
@@ -29,5 +30,5 @@ void main() {
     // Transformér normaler (enkel variant)
     v_norm = mat3(model) * in_norm;
     
-    gl_Position = u_view_projection * world_pos;
+    gl_Position = projection * view * world_pos;
 }

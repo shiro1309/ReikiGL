@@ -5,6 +5,8 @@ from .camera import Camera, BaseCamera
 from ..shader import import_shader
 from dataclasses import dataclass
 from ..math import transform
+from abc import ABC, abstractmethod
+
 
 class Grid:
     def __init__(self, shader, ctx: mgl.Context) -> None:
@@ -416,3 +418,259 @@ class Cylinder3D:
         self.vao.render(mgl.TRIANGLE_FAN, vertices=self.cap_verts, first=self.top_offset)
         self.vao.render(mgl.TRIANGLE_STRIP, vertices=self.side_verts, first=self.side_offset)
 
+
+
+################################################################
+#
+#                         NEW SHAPES
+#
+################################################################
+
+from abc import ABC, abstractmethod
+import numpy as np
+import moderngl as mgl
+from typing import Tuple, Union, Optional
+from .batch import Batch3D
+from ..math import transform
+
+from abc import ABC, abstractmethod
+from typing import Tuple, List, Optional, Union
+import numpy as np
+import numpy.typing as npt
+import moderngl as mgl
+from icosphere import icosphere
+
+class ShapeBase(ABC):
+    def __init__(
+        self, 
+        ctx: mgl.Context, 
+        program: mgl.Program, 
+        batch: Optional[Batch3D] = None
+    ):
+        self._ctx: mgl.Context = ctx
+        self._program: mgl.Program = program
+        self._batch: Optional[Batch3D] = batch
+        
+        # Transformation State
+        self._x: float = 0.0
+        self._y: float = 0.0
+        self._z: float = 0.0
+        self._rotation: float = 0.0
+        self._rgba: np.ndarray = np.array([255, 255, 255, 255], dtype="f4")
+        
+        # The Model Matrix (Always 4x4 float64 or float32)
+        self.matrix: npt.NDArray[np.float64] = np.eye(4, dtype=np.float64)
+
+        #self.color = self._rgba
+        
+        # GPU Resource Handles
+        self.mesh_id: Optional[str] = None
+        self.vao: Optional[mgl.VertexArray] = None
+        self.vbo: Optional[mgl.Buffer] = None
+        self.ibo: Optional[mgl.Buffer] = None
+
+    @abstractmethod
+    def _create_vertices(self) -> None:
+        """Each child must implement this to define its geometry."""
+        pass
+
+    def _setup_standalone(self, vertices: np.ndarray, indices: List[int]) -> None:
+        """
+        Creates standalone GPU buffers. 
+        Matches the '3f 3f' layout (Position, Normal).
+        """
+        vbo = self._ctx.buffer(np.array(vertices, dtype='f4'))
+        ibo = self._ctx.buffer(np.array(indices, dtype='i4'))
+        
+        # Link the VBO to the 'location' indices in the shader
+        # 3f (in_pos) + 3f (in_norm)
+        self.vao = self._ctx.vertex_array(
+            self._program, 
+            [(vbo, '3f 2x4 3f', 'in_pos', 'in_norm')], 
+            ibo
+        )
+
+    def _update_translation(self) -> None:
+        """Uses the library's compose_model to sync the matrix."""
+        # Ensure your compose_model returns a 4x4 numpy array
+        self.matrix = transform.compose_model(
+            translation=(self._x, self._y, self._z),
+            euler=(0, 0, np.radians(self._rotation)), 
+            scale_val=(1.0, 1.0, 1.0)
+        )
+        
+        if self._batch and self.mesh_id is not None:
+            self._batch.set_model(str(self.mesh_id), self.matrix)
+
+    def _update_color(self) -> None:
+        if self._batch and self.mesh_id is not None:
+            norm_color = np.array(self._rgba, dtype='f4')
+            self._batch.set_mesh_color(self.mesh_id, norm_color)
+
+    @property
+    def color(self) -> np.ndarray:
+        return self._rgba
+
+    @color.setter
+    def color(self, value: Tuple[int, int, int, int]):
+        self._rgba = np.array(value, dtype=np.float32)
+        self._update_color()
+
+    def draw(self, camera: BaseCamera):
+        if not self.vao:
+            return
+
+        # 1. Update Matrix (Assuming compose_model is available)
+        self.matrix = transform.compose_model(
+            translation=(self._x, self._y, self._z),
+            euler=(0, 0, 0),
+            scale_val=(1, 1, 1)
+        )
+
+        # 2. Upload Uniforms
+        #self.program['projection'].write(camera.get_projection_matrix().T.astype('f4'))
+        #self.program['view'].write(camera.get_view_matrix().T.astype('f4'))
+        camera.apply_to_shader(self._program, "view", "projection")
+        self._program['u_model'].write(self.matrix.T.astype('f4').copy())
+        
+        norm_color = np.array(self._rgba, dtype='f4') / 255.0
+        self._program['u_color'].write(norm_color)
+
+        # 3. Render
+        self.vao.render(mgl.TRIANGLES)
+
+
+
+class Rectangle(ShapeBase):
+    def __init__(self, ctx, program, x, y, width, height, batch=None) -> None:
+        super().__init__(ctx, program, batch)
+        # We store coordinates, but the actual 'positioning' 
+        # should ideally happen via the Model Matrix.
+        self.width, self.height = width, height
+        
+        self._create_vertices()
+        
+        # Set initial position via matrix
+        self.matrix = np.eye(4, dtype='f4')
+        # Translate to x, y
+        self.matrix[3, :2] = [x, y] 
+        self._update_translation()
+
+    def _create_vertices(self) -> None:
+        w, h = self.width, self.height
+        
+        # Format: x, y, z,  uv_x, uv_y,  nx, ny, nz (8 floats per vertex)
+        # Normals are all 0, 0, 1 (pointing straight out of the screen)
+        vertices = [
+            # pos          # uv    # normal
+            0, 0, 0,       0, 0,   0, 0, 1,  # Bottom Left
+            w, 0, 0,       1, 0,   0, 0, 1,  # Bottom Right
+            0, h, 0,       0, 1,   0, 0, 1,  # Top Left
+            w, h, 0,       1, 1,   0, 0, 1,  # Top Right
+        ]
+        
+        indices = [0, 1, 2, 1, 3, 2]
+
+        if self._batch:
+            # Register with 8-float stride compatibility
+            self.mesh_id = self._batch.add_mesh(vertices, indices)
+        
+        self._setup_standalone(vertices, indices)
+
+import math
+
+def create_uv_sphere(radius: float, sectors: int = 20, stacks: int = 20) -> Tuple[list[float], list[int]]:
+    vertices = []
+    indices = []
+
+    # Generate Vertices
+    for i in range(stacks + 1):
+        phi = math.pi / 2 - i * math.pi / stacks
+        for j in range(sectors + 1):
+            theta = j * 2 * math.pi / sectors
+            
+            # Position (x, y, z)
+            x = radius * math.cos(phi) * math.cos(theta)
+            y = radius * math.cos(phi) * math.sin(theta)
+            z = radius * math.sin(phi)
+            
+            # For our '3f 2f 3f' format: Pos, Tex, Normal
+            # Position
+            vertices.extend([x, y, z])
+            # TexCoord (Optional 0,0 for now)
+            vertices.extend([j / sectors, i / stacks])
+            # Normal (For a sphere, normalized position is the normal)
+            mag = math.sqrt(x*x + y*y + z*z)
+            vertices.extend([x/mag, y/mag, z/mag] if mag != 0 else [0, 0, 1])
+
+    # Generate Indices
+    for i in range(stacks):
+        k1 = i * (sectors + 1)
+        k2 = k1 + sectors + 1
+        for j in range(sectors):
+            if i != 0:
+                indices.extend([k1 + j, k2 + j, k1 + j + 1])
+            if i != (stacks - 1):
+                indices.extend([k1 + j + 1, k2 + j, k2 + j + 1])
+                
+    return vertices, indices
+
+def create_icosphere_fast(radius: float, subdivisions: int = 3):
+    # 1. Get raw geometry (Vertices are Nx3, Faces are Mx3)
+    vertices, faces = icosphere(subdivisions)
+    
+    # Scale by radius
+    vertices = vertices * radius
+    
+    # 2. Generate Normals
+    # For a sphere centered at 0,0,0, the normal is just the normalized position
+    # vertices is already normalized by the library (unit sphere), 
+    # but we'll re-calculate to be safe after radius scaling.
+    norms = vertices / np.linalg.norm(vertices, axis=1, keepdims=True)
+    
+    # 3. Generate UVs (Spherical Mapping)
+    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+    u = 0.5 + np.arctan2(z, x) / (2 * np.pi)
+    v = 0.5 - np.arcsin(y / radius) / np.pi
+    uvs = np.stack([u, v], axis=1)
+    
+    # 4. Interleave the data: [Pos(3), UV(2), Norm(3)]
+    # This creates an (N, 8) array
+    packed_data = np.hstack([vertices, uvs, norms]).astype('f4')
+    
+    # 5. Flatten for your batch system
+    final_vertices = packed_data.ravel().tolist()
+    final_indices = faces.astype('u4').ravel().tolist()
+    
+    return final_vertices, final_indices
+
+class Sphere(ShapeBase):
+    def __init__(self, ctx, program, x, y, z, radius, subdivision_frequency: int = 4, color=(255, 255, 255, 255), batch=None) -> None:
+        super().__init__(ctx, program, batch)
+        self._x, self._y, self._z = x, y, z
+        self._radius = radius
+        self._rgba = color
+        self.subdivision_frequency = subdivision_frequency
+        self._create_vertices()
+
+    def _create_vertices(self) -> None:
+        # 1. Generate (pos, norm) only for a simple 3f 3f layout
+        verts, indices = create_icosphere_fast(self._radius, self.subdivision_frequency)
+        
+        if self._batch:
+            self.mesh_id = self._batch.add_mesh(verts, indices)
+            self._update_translation()
+            # Batch color update logic here
+        self._setup_standalone(verts, indices)
+        self._update_translation()
+
+    @property
+    def z(self) -> float: return self._z
+    @z.setter
+    def z(self, value) -> None:
+        self._z = value
+        self._update_translation()
+
+    def move_z(self, value) -> None:
+        self._z += value
+        self._update_translation()
