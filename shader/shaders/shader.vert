@@ -24,8 +24,8 @@ void main() {
     mat4 model = models[in_mesh_id];
     
     // Beregn verdensposisjon
-    vec4 world_pos = model * vec4(in_pos, 1.0);
-    v_pos = world_pos.xyz;
+        vec4 world_pos = model * vec4(in_pos, 1.0);
+        v_pos = world_pos.xyz;
     
     // Transformér normaler (enkel variant)
     v_norm = mat3(model) * in_norm;

@@ -23,6 +23,7 @@ uniform bool u_is_batched;      // The Switch
 
 out vec3 v_norm;
 out vec4 v_color;
+out vec3 v_pos;
 
 void main() {
     mat4 model_mtx;
@@ -39,6 +40,9 @@ void main() {
 
     // Normal transform (using the top-left 3x3 of the model matrix)
     v_norm = mat3(model_mtx) * in_norm;
+
+    vec4 world_pos = model_mtx * vec4(in_pos, 1.0);
+    v_pos = world_pos.xyz;
     
     // Final screen position
     gl_Position = projection * view * model_mtx * vec4(in_pos, 1.0);
