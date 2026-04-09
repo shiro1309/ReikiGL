@@ -1,1 +1,1 @@
-from .obj_loader import parse_obj_face, build_indexed_mesh, obj
+from .obj_loader import parse_obj_face, build_indexed_mesh, obj, obj_l

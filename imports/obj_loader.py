@@ -83,3 +83,48 @@ def obj(file_path: str) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.int32]]
     vao_data = np.hstack([final_pos, final_uv, final_nrm], dtype="f4")
 
     return vao_data, indicies
+
+def obj_l(file_path: str) -> Tuple[List[float], List[int]]:
+    raw_pos: List[List[float]] = [] 
+    raw_uv:  List[List[float]] = [] 
+    raw_nrm: List[List[float]] = [] 
+    all_triangles = []
+
+    with open(file_path, "r") as f:
+        for line in f:
+            parts = line.split()
+            if not parts: continue
+            prefix = parts[0]
+            if prefix == "v":
+                raw_pos.append([float(parts[1]), float(parts[2]), float(parts[3])])
+            elif prefix == "vn":
+                raw_nrm.append([float(parts[1]), float(parts[2]), float(parts[3])])
+            elif prefix == "vt":
+                raw_uv.append([float(parts[1]), float(parts[2])])
+            elif prefix == "f":
+                all_triangles.extend(parse_obj_face(line))
+    
+    mesh_table, indices = build_indexed_mesh(all_triangles)
+
+    # Convert to numpy for indexing speed
+    np_pos = np.array(raw_pos, dtype='f4')
+    np_uv  = np.array(raw_uv, dtype='f4') if raw_uv else np.zeros((len(np_pos), 2), dtype='f4')
+    np_nrm = np.array(raw_nrm, dtype='f4') if raw_nrm else np.zeros((len(np_pos), 3), dtype='f4')
+
+    v_idxs, vt_idxs, vn_idxs = mesh_table[:, 0], mesh_table[:, 1], mesh_table[:, 2]
+
+    # Map the data
+    final_pos = np_pos[v_idxs]
+    final_uv  = np_uv[vt_idxs]
+    final_nrm = np_nrm[vn_idxs]
+
+    # 1. Create the (N, 8) packed array [Pos(3), UV(2), Norm(3)]
+    packed_data = np.hstack([final_pos, final_uv, final_nrm]).astype('f4')
+
+    # 2. Flatten to list to match create_icosphere_fast output
+    final_vertices = packed_data.ravel().tolist()
+    
+    # 3. Ensure indices is a flat list of unsigned ints
+    final_indices = np.array(indices, dtype='u4').ravel().tolist()
+
+    return final_vertices, final_indices

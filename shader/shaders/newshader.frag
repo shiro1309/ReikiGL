@@ -14,6 +14,9 @@ void main() {
 
     float diff = max(dot(n, l), 0.2);
 
+    //vec3 reflectedLight    = normalize(reflect(-lightDirection, norm));
+    //vec3 observerDirection = normalize(globalState.camera_position - o_fragPosition.xyz);
+
     f_color = vec4(v_color.rgb * diff, v_color.a);
 
     //float ambient = 0.3;

@@ -539,6 +539,17 @@ class ShapeBase(ABC):
         # 3. Render
         self.vao.render(mgl.TRIANGLES)
 
+    @property
+    def z(self) -> float: return self._z
+    @z.setter
+    def z(self, value) -> None:
+        self._z = value
+        self._update_translation()
+
+    def move_z(self, value) -> None:
+        self._z += value
+        self._update_translation()
+
 
 
 class Rectangle(ShapeBase):
@@ -567,6 +578,42 @@ class Rectangle(ShapeBase):
             w, 0, 0,       1, 0,   0, 0, 1,  # Bottom Right
             0, h, 0,       0, 1,   0, 0, 1,  # Top Left
             w, h, 0,       1, 1,   0, 0, 1,  # Top Right
+        ]
+        
+        indices = [0, 1, 2, 1, 3, 2]
+
+        if self._batch:
+            # Register with 8-float stride compatibility
+            self.mesh_id = self._batch.add_mesh(vertices, indices)
+        
+        self._setup_standalone(vertices, indices)
+
+class Rectangle3D(ShapeBase):
+    def __init__(self, ctx, program, x, y, z, width, height, batch=None) -> None:
+        super().__init__(ctx, program, batch)
+        # We store coordinates, but the actual 'positioning' 
+        # should ideally happen via the Model Matrix.
+        self.width, self.height = width, height
+        
+        self._create_vertices()
+        
+        # Set initial position via matrix
+        self.matrix = np.eye(4, dtype='f4')
+        # Translate to x, y
+        self.matrix[3, :3] = [x, y, z] 
+        self._update_translation()
+
+    def _create_vertices(self) -> None:
+        w, h = self.width, self.height
+        
+        # Format: x, y, z,  uv_x, uv_y,  nx, ny, nz (8 floats per vertex)
+        # Normals are all 0, 0, 1 (pointing straight out of the screen)
+        vertices = [
+            # pos          # uv    # normal
+            0, 0, 0,       0, 0,   0, -1, 0,  # Bottom Left
+            w, 0, 0,       1, 0,   0, -1, 0,  # Bottom Right
+            0, 0, h,       0, 1,   0, -1, 0,  # Top Left
+            w, 0, h,       1, 1,   0, -1, 0,  # Top Right
         ]
         
         indices = [0, 1, 2, 1, 3, 2]
@@ -664,13 +711,4 @@ class Sphere(ShapeBase):
         self._setup_standalone(verts, indices)
         self._update_translation()
 
-    @property
-    def z(self) -> float: return self._z
-    @z.setter
-    def z(self, value) -> None:
-        self._z = value
-        self._update_translation()
-
-    def move_z(self, value) -> None:
-        self._z += value
-        self._update_translation()
+    
