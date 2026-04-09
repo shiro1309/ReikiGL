@@ -128,3 +128,5 @@ def obj_l(file_path: str) -> Tuple[List[float], List[int]]:
     final_indices = np.array(indices, dtype='u4').ravel().tolist()
 
     return final_vertices, final_indices
+
+#def obj_c(file_path: str)

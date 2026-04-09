@@ -259,133 +259,190 @@ import moderngl as mgl
 import struct
 from typing import Tuple, cast
 
-class NBatch3D:
-    def __init__(self, ctx: mgl.Context, program: mgl.Program, 
-                 fmt: str, attrs: Tuple[str, ...], max_meshes: int = 10000) -> None:
+class AdvancedBatch:
+    def __init__(self, ctx: mgl.Context, program: mgl.Program, max_meshes=10000, max_vertices=500000) -> None:
+        """
+        Manages high-speed rendering of multiple meshes using Indirect Drawing.
+        
+        Args:
+            ctx: The ModernGL context.
+            program: The shader program.
+            max_meshes: Maximum objects allowed in the batch.
+            max_vertices: Maximum total vertices allowed in the VBO.
+        """
         self.ctx = ctx
         self.program = program
-        self.fmt = fmt
-        self.attrs = attrs
         self.max_meshes = max_meshes
+        self.max_vertices = max_vertices
         
-        self.vertex_data = []
+        # 1. CPU Shadow Copies
+        # Format: x, y, z, u, v, nx, ny, nz, r, g, b, a (12 floats)
+        self.vertex_data = [] 
         self.index_data = []
-        self.meshes = {}  # Stores: first_index, count, model_matrix, visible, etc.
-        self.unique_counter = 0
-
-        # Pre-allocate SSBOs for performance
-        # 16 floats per matrix (64 bytes) * max_meshes
-        self.matrix_buffer = self.ctx.buffer(reserve=self.max_meshes * 64)
-        # 4 floats per color (16 bytes) * max_meshes
-        self.color_buffer = self.ctx.buffer(reserve=self.max_meshes * 16)
+        self.meshes = {} # Stores offsets and metadata
         
-        self.matrix_buffer.bind_to_storage_buffer(0)
-        self.color_buffer.bind_to_storage_buffer(1)
-
-    def add_mesh(self, vao_data, indices) -> str:
-        """Adds geometry and returns a unique mesh_id."""
-        mesh_id = str(self.unique_counter)
-        start_vertex = len(self.vertex_data) // (sum(int(x[0]) for x in self.fmt.split() if 'f' in x))
+        # Metadata for the VAO
+        self.fmt = '3f 2x4 3f 4f'
+        self.attrs = ('in_pos', 'in_norm', 'in_color')
+        self.stride = 12 * 4 # 12 floats * 4 bytes = 48 bytes
         
-        # Shift indices based on current vertex count
+    def add_mesh(self, vertices, indices, color=[1.0, 1.0, 1.0, 1.0]) -> int:
+        """
+        Adds a mesh to the batch lists. Handles both single-color and per-vertex modes.
+        
+        If 'color' is provided as a list [R, G, B, A], it will be appended to 
+        every vertex (Normal Mode).
+        If 'color' is None, it assumes vertices are already 12-floats long (Advanced Mode).
+        
+        Args:
+            vertices (list): Flat list of vertex floats (8 or 12 per vertex).
+            indices (list): List of indices for the EBO.
+            color (list, optional): [r, g, b, a] to apply to the whole mesh.
+            
+        Returns:
+            int: The unique mesh_id for this instance.
+        """
+        mesh_id = len(self.meshes)
+        
+        # Safety check for 12-float stride
+        if len(vertices) % 12 != 0:
+            raise ValueError(f"Vertex data length {len(vertices)} must be multiple of 12.")
+
+        start_vertex = len(self.vertex_data) // 12
+        start_index = len(self.index_data)
+        
+        # Add indices with the correct offset
         shifted_indices = [i + start_vertex for i in indices]
-
-        self.meshes[mesh_id] = {
-            "first_index": len(self.index_data),
-            "count": len(indices),
-            "model": np.eye(4, dtype="f4"),
-            "visible": True,
-            "wireframe": False,
-        }
-
-        self.vertex_data.extend(vao_data)
+        
+        self.vertex_data.extend(vertices)
         self.index_data.extend(shifted_indices)
         
-        self.unique_counter += 1
+        self.meshes[mesh_id] = {
+            'start_vertex': start_vertex,
+            'vertex_count': len(vertices) // 12,
+            'start_index': start_index,
+            'index_count': len(indices),
+            'color': color,
+        }
         return mesh_id
 
-    def set_model(self, mesh_id: str, model_matrix: np.ndarray):
-        """Update the matrix in the dictionary and the GPU buffer."""
-        idx = int(mesh_id)
-        self.meshes[mesh_id]["model"] = model_matrix
-        # Write directly to the specific slot in the SSBO
-        # ModernGL/OpenGL expects Column-Major (.T)
-        data = model_matrix.T.astype('f4').tobytes()
-        self.matrix_buffer.write(data, offset=idx * 64)
-
-    def set_mesh_color(self, mesh_id: str, color: np.ndarray):
-        """Update the color in the GPU buffer (0.0 - 1.0 floats)."""
-        idx = int(mesh_id)
-        # RGBA = 16 bytes
-        self.color_buffer.write(color.astype('f4').tobytes(), offset=idx * 16)
-
     def build(self) -> None:
-        """Finalize the vertex/index buffers and create the VAO."""
-        self.vbo = self.ctx.buffer(np.array(self.vertex_data, dtype="f4").tobytes())
-        self.ibo = self.ctx.buffer(np.array(self.index_data, dtype="i4").tobytes())
+        """
+        Finalizes the batch and ships the data to the GPU. 
+        Calculates indirect commands and sets up the VAO.
+        """
+        # Convert lists to NumPy for the initial upload
+        v_np = np.array(self.vertex_data, dtype='f4')
+        i_np = np.array(self.index_data, dtype='i4')
 
-        # We add 'in_mesh_id' as a per-vertex attribute (manually handled or via divisor)
-        # However, for indirect drawing, we usually use gl_DrawID or a custom ID buffer.
-        # Let's create a buffer that assigns each vertex its mesh ID.
-        
-        # Simplified: We use an ID buffer to tell each vertex which mesh it belongs to
-        # (This is necessary if your shader uses colors[in_mesh_id])
-        ids = []
-        for mesh_id, data in self.meshes.items():
-            # Roughly estimate vertex count for this mesh
-            v_count = data["count"] # This is index count, adjust as needed
-            ids.extend([int(mesh_id)] * v_count) 
-            
-        self.id_buffer = self.ctx.buffer(np.array(ids, dtype='i4').tobytes())
+        # 1. Vertex Buffer (VBO) - Pre-allocate space
+        self.vbo = self.ctx.buffer(reserve=self.max_vertices * self.stride)
+        self.vbo.write(v_np.tobytes())
 
+        # 2. Index Buffer (IBO)
+        self.ibo = self.ctx.buffer(i_np.tobytes())
+
+        # 3. Mesh ID Buffer (for gl_InstanceID mapping)
+        mesh_ids = np.arange(self.max_meshes, dtype='i4')
+        self.mesh_id_buffer = self.ctx.buffer(mesh_ids.tobytes())
+
+        # 4. Matrix SSBO (Binding 0)
+        self.matrix_buffer = self.ctx.buffer(reserve=self.max_meshes * 64)
+        self.matrix_buffer.bind_to_storage_buffer(0)
+
+        # 5. VAO Setup
+        # Note the '1i /i' which means 1 integer, updated per instance
         self.vao = self.ctx.vertex_array(
             self.program,
             [
                 (self.vbo, self.fmt, *self.attrs),
-                (self.id_buffer, '1i', 'in_mesh_id')
+                (self.mesh_id_buffer, '1i /i', 'in_mesh_id')
             ],
             self.ibo
         )
 
+        # 6. Indirect Buffer
+        self.indirect_buffer = self.ctx.buffer(reserve=self.max_meshes * 20)
+        self._update_indirect()
+
+    def _update_indirect(self) -> None:
+        """Generates the byte commands for the GPU Indirect Draw call."""
+        commands = []
+        for m_id, m in self.meshes.items():
+            commands.extend([
+                m['index_count'], # count
+                1,                # instanceCount
+                m['start_index'], # firstIndex
+                0,                # baseVertex
+                m_id              # baseInstance (becomes in_mesh_id)
+            ])
+        self.indirect_buffer.write(np.array(commands, dtype='u4').tobytes())
+
+    def update_color(self, mesh_id, r, g, b, a=1.0) -> None:
+        """Targeted update of colors in the VBO."""
+        m = self.meshes[mesh_id]
+        new_color = np.array([r, g, b, a], dtype='f4')
+        
+        # We need to update every vertex in this specific mesh
+        # We'll build a small buffer of just the color data to blast onto the GPU
+        start_v = m['start_vertex']
+        count_v = m['vertex_count']
+        
+        # Optimization: Update the CPU shadow so it's ready for future redraws
+        # (Though for speed, you might just do the GPU write)
+        for i in range(count_v):
+            # Calculate the exact byte offset for the COLOR part of the vertex
+            # Offset = (VertexIndex * 12 floats + 8 floats offset) * 4 bytes
+            offset = (start_v + i) * self.stride + (8 * 4)
+            self.vbo.write(new_color.tobytes(), offset=offset)
+    
+    def update_mesh_color_fast(self, mesh_id, r, g, b, a=1.0) -> None:
+        """
+        Updates the color for an entire mesh in one single GPU operation.
+        """
+        if mesh_id not in self.meshes:
+            return
+        
+        mesh = self.meshes[mesh_id]
+        start_v = mesh['start_vertex']
+        count_v = mesh['vertex_count']
+
+        # 1. Grab the chunk of data from our CPU shadow list
+        # Every mesh starts at start_v * 12 floats
+        start_idx = start_v * 12
+        end_idx = (start_v + count_v) * 12
+
+        # Create a view of this specific mesh's data
+        # Note: If you want this to be EXTREMELY fast, keep self.vertex_data 
+        # as a NumPy array permanently instead of a list.
+        mesh_chunk = np.array(self.vertex_data[start_idx:end_idx], dtype='f4')
+
+        # 2. Reshape to (-1, 12) so we can talk to the columns
+        # We want columns 8, 9, 10, 11 (the RGBA part)
+        reshaped_view = mesh_chunk.reshape(-1, 12)
+        reshaped_view[:, 8:12] = [r, g, b, a]
+
+        # 3. Update the CPU shadow so the change is persistent
+        self.vertex_data[start_idx:end_idx] = mesh_chunk.flatten().tolist()
+
+        # 3. One single write call for the whole mesh block
+        byte_offset = start_v * self.stride
+        self.vbo.write(mesh_chunk.tobytes(), offset=byte_offset)
+
+    def update_matrix(self, mesh_id, matrix_np) -> None:
+        """Updates the 4x4 matrix for a specific mesh."""
+        # Matrix is 64 bytes (16 floats)
+        offset = mesh_id * 64
+        self.matrix_buffer.write(matrix_np.tobytes(), offset=offset)
+
     def draw_fast(self, camera: BaseCamera) -> None:
-        """The optimized indirect draw call."""
-        # 1. Update Camera Uniform
-        vp = camera.get_projection_matrix() @ camera.get_view_matrix()
-        if "u_view_projection" in self.program:
-            view_projection_data = cast(mgl.Uniform, self.program["u_view_projection"])
-            view_projection_data.write(vp.T.astype('f4').tobytes())
+        active_meshes = len(self.meshes)
+        if active_meshes == 0:
+            return
 
-        solid_commands = []
-        wire_commands = []
-
-        for mesh_id, data in self.meshes.items():
-            if not data["visible"]:
-                continue
-            
-            # Indirect Command: count, instanceCount, firstIndex, baseVertex, baseInstance
-            cmd = struct.pack('5I', 
-                data["count"], 
-                1, 
-                data["first_index"], 
-                0, 
-                int(mesh_id) # baseInstance can be used as gl_InstanceID
-            )
-            
-            if data["wireframe"]:
-                wire_commands.append(cmd)
-            else:
-                solid_commands.append(cmd)
-
-        # 2. Render Solids
-        if solid_commands:
-            self.ctx.wireframe = False
-            ind_buf = self.ctx.buffer(b''.join(solid_commands))
-            self.vao.render_indirect(ind_buf, count=len(solid_commands))
-            ind_buf.release()
-
-        # 3. Render Wireframes
-        if wire_commands:
-            self.ctx.wireframe = True
-            ind_buf = self.ctx.buffer(b''.join(wire_commands))
-            self.vao.render_indirect(ind_buf, count=len(wire_commands))
-            ind_buf.release()
+        if 'u_is_batched' in self.program:
+            self.program['u_is_batched'] = True
+        
+        camera.apply_to_shader(self.program, "view", "projection")
+        
+        self.vao.render_indirect(self.indirect_buffer, count=active_meshes)
