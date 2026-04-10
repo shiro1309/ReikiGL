@@ -23,8 +23,6 @@ void main() {
     
     // Fetch this specific mesh's transform
     mat4 model = models[in_mesh_id];
-
-    vec3 position_offset = vec3(in_uv.x * 0.0, in_norm.x * 0.0, in_color.r * 0.0);
     
-    gl_Position = projection * view * model * vec4(in_pos + position_offset, 1.0);
+    gl_Position = projection * view * model * vec4(in_pos, 1.0);
 }

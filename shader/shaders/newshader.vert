@@ -18,7 +18,7 @@ layout (std430, binding = 1) buffer ColorBuffer    {
 uniform mat4 projection;
 uniform mat4 view;
 uniform mat4 u_model;           // Standalone Matrix
-uniform vec4 u_color; // Standalone Color
+uniform vec4 u_color;           // Standalone Color
 uniform bool u_is_batched;      // The Switch
 
 out vec3 v_norm;

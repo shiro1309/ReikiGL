@@ -446,3 +446,98 @@ class AdvancedBatch:
         camera.apply_to_shader(self.program, "view", "projection")
         
         self.vao.render_indirect(self.indirect_buffer, count=active_meshes)
+
+class SimpleInstancedBatch:
+    def __init__(self, ctx, program, vertices, indices):
+        self.ctx = ctx
+        self.program = program
+        
+        # 1. Create Buffers for the SINGLE mesh
+        self.vbo = self.ctx.buffer(np.array(vertices, dtype='f4'))
+        self.ibo = self.ctx.buffer(np.array(indices, dtype='i4'))
+        
+        # 2. Setup VAO (standard 330, no layouts needed if names match)
+        # Format '3f 3f 4f' matches pos, norm, color
+        self.vao = self.ctx.vertex_array(
+            self.program,
+            [(self.vbo, '3f 3f 4f', 'in_pos', 'in_norm', 'in_color')],
+            self.ibo
+        )
+        
+        self.instance_matrices = []
+
+    def clear_instances(self):
+        self.instance_matrices = []
+
+    def add_instance(self, matrix_np):
+        self.instance_matrices.append(matrix_np)
+
+    def draw(self, camera):
+        if not self.instance_matrices:
+            return
+            
+        camera.apply_to_shader(self.program, "view", "projection")
+        
+        # We can only draw in batches of 250 due to the shader array limit
+        for i in range(0, len(self.instance_matrices), 250):
+            chunk = self.instance_matrices[i:i + 250]
+            
+            # Flatten the matrices into one long list of floats
+            flat_data = np.array(chunk, dtype='f4').flatten()
+            
+            # Upload the matrices to the uniform array
+            self.program['u_models'].write(flat_data.tobytes())
+            
+            # Draw the mesh 'len(chunk)' times
+            self.vao.render(instances=len(chunk))
+
+class GameObject:
+    def __init__(self, ctx, program, vertices, indices):
+        self.ctx = ctx
+        self.program = program
+        
+        # 1. Create Buffers for this specific mesh
+        self.vbo = self.ctx.buffer(np.array(vertices, dtype='f4'))
+        self.ibo = self.ctx.buffer(np.array(indices, dtype='i4'))
+        
+        # 2. Setup VAO
+        # Ensure 'in_pos', 'in_norm', 'in_color' match the shader
+        self.vao = self.ctx.vertex_array(
+            self.program,
+            [(self.vbo, '3f 2x4 3f 4f', 'in_pos', 'in_norm', 'in_color')],
+            self.ibo
+        )
+        
+        # Transform properties
+        self.matrix = np.eye(4, dtype='f4')
+
+    def render(self, camera):
+        # Standard camera matrices
+        camera.apply_to_shader(self.program, "view", "projection")
+
+        # Object transform
+        self.program['u_model'].write(self.matrix.tobytes())
+
+        # Lighting uniforms
+        # Adjust these values to change the look of the scene
+        if 'u_light_pos' in self.program:
+            self.program['u_light_pos'].value = (10.0, 10.0, 10.0)
+
+        if 'u_camera_pos' in self.program:
+            # Assuming your camera object has a 'position' attribute
+            self.program['u_camera_pos'].value = camera.position
+
+        if 'u_diffuseColor' in self.program:
+            self.program['u_diffuseColor'].value = (1.0, 1.0, 1.0)
+
+        # Draw call
+        self.vao.render(mgl.TRIANGLES)
+
+    def release(self):
+        """Cleanup GPU resources for this object."""
+        self.vbo.release()
+        self.ibo.release()
+        self.vao.release()
+
+    def update_matrix(self, matrix) -> None:
+        self.matrix = matrix

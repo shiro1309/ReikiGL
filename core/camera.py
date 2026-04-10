@@ -153,7 +153,7 @@ class BlenderCamera(BaseCamera):
     """
     def __init__(self) -> None:
         super().__init__()
-        self.distance = 10
+        self.distance = 50
 
         self.speed = .2
         self.sensitivity = .1
