@@ -234,3 +234,68 @@ class BlenderCamera(BaseCamera):
             self.pitch = np.clip(self.pitch, -89, 89)
 
         self.update_position()
+
+class SpaceshipCamera(BaseCamera):
+    def __init__(self, distance=15.0, height=5.0, lerp_factor=0.5) -> None:
+        super().__init__()
+        # Offset is (Side, Up, Back). 
+        # -15.0 on Z puts the camera 15 units BEHIND the ship.
+        self.distance = distance
+        self.height = height
+        self.lerp_factor = lerp_factor
+
+        self.local_anchor = np.array([0.0, 0.0, 0.0])
+        self.default_anchor = np.array([0.0, 0.0, 0.0])
+
+        self.local_back_vec = np.array([-1.0, 0.0, 0.0]) 
+        self.local_up_vec   = np.array([0.0, 1.0, 0.0])
+
+    def set_anchor(self, x, y, z) -> None:
+        """Sets the local point on the ship the camera follows."""
+        self.local_anchor = np.array([x, y, z], dtype=float)
+    
+    def set_default_anchor(self, x, y, z) -> None:
+        """Sets the default local point on the ship the camera follows."""
+        self.default_anchor = np.array([x, y, z], dtype=float)
+    
+    def reset_anchor(self) -> None:
+        """Resets the local anchor back to the default"""
+        self.local_anchor = self.default_anchor
+
+    def update_camera_from_model(self, model_matrix: np.ndarray) -> None:
+        """
+        Takes the 4x4 model matrix of your spaceship and updates the camera position.
+        """
+        # 1. Calculate the World Position of the Anchor
+        # We treat the anchor as a point (w=1) and multiply by model matrix
+        anchor_world_pos = (model_matrix @ np.append(self.local_anchor, 1.0))[:3]
+
+        # 2. Get world-space directions for the offset
+        # We only need rotation here, so we use the top-left 3x3
+        ship_rotation = model_matrix[:3, :3]
+        world_back = ship_rotation @ self.local_back_vec
+        world_up   = ship_rotation @ self.local_up_vec
+
+        # 3. Target Position: The camera looks at the anchor point
+        # (Or slightly in front of it)
+        self.target = anchor_world_pos + ((-world_back) * 5.0)
+
+        # 4. Desired Camera Position: Relative to the anchor
+        desired_pos = anchor_world_pos + (world_back * self.distance) + (world_up * self.height)
+
+        # 5. Smooth Interpolation
+        self.position = self.position + (desired_pos - self.position) * self.lerp_factor
+        self.up = world_up
+
+        # 6. Keep the camera's 'Up' synced with the ship's 'Up'
+        self.up = world_up
+
+    def update_position(self) -> None:
+        # Position is handled via update_camera_from_model
+        pass
+
+    def update(self, dt, input: InputManager) -> None:
+        """
+        Usually, logic for manual zoom or FOV changes would go here.
+        """
+        pass

@@ -495,7 +495,7 @@ class SimpleInstancedBatch:
             self.vao.render(instances=len(chunk))
 
 class GameObject:
-    def __init__(self, ctx, program, vertices, indices):
+    def __init__(self, ctx, program, vertices, indices) -> None:
         self.ctx = ctx
         self.program = program
         
@@ -515,7 +515,7 @@ class GameObject:
         # Transform properties
         self.matrix = np.eye(4, dtype='f4')
 
-    def render(self, camera):
+    def render(self, camera) -> None:
         # Standard camera matrices
         camera.apply_to_shader(self.program, "view", "projection")
 

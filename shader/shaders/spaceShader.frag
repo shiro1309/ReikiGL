@@ -7,35 +7,38 @@ in vec4 o_fragPosition;
 
 out vec4 color;
 
-// Material properties
-uniform vec3 u_diffuseColor = vec3(1.0);
-uniform vec3 u_specularColor = vec3(1.0);
-
-// Flattened GlobalState for easier Python binding
 uniform vec3 u_light_pos;
-uniform vec3 u_camera_pos;
+uniform vec3 u_diffuseColor = vec3(1.0);
+uniform float u_light_size = 20.0;     // Larger = softer shadows/transitions
+uniform float u_light_intensity = 1.0; 
 
 void main() {
-    vec4 baseColor = o_color;
-
-    // Diffuse computations
     vec3 norm = normalize(o_normal);
-    vec3 lightDirection = normalize(u_light_pos - o_fragPosition.xyz);
     
-    // Ambient - added a small baseline so it's not pitch black in shadow
-    float ambient = 0.15;
-    float diffIntensity = max(dot(norm, lightDirection), 0.0);
-    vec3 diffuseColor = (diffIntensity + ambient) * u_diffuseColor;
+    // Calculate vector to light
+    vec3 lightVec = u_light_pos - o_fragPosition.xyz;
+    float distance = length(lightVec);
+    vec3 lightDir = normalize(lightVec);
 
-    // Specular computations (Phong)
-    vec3 reflectedLight = normalize(reflect(-lightDirection, norm));
-    vec3 observerDirection = normalize(u_camera_pos - o_fragPosition.xyz);
+    // --- AREA LIGHT TRICK: Light Wrapping ---
+    // Instead of a hard cutoff at dot(n, l) == 0, we allow the light to 
+    // "wrap" around the object slightly, mimicking a large area source.
+    float wrap = 0.5; 
+    float diffIntensity = max(dot(norm, lightDir) + wrap, 0.0) / (1.0 + wrap);
+
+    // --- AREA LIGHT TRICK: Soft Falloff ---
+    // Blender Area Lights don't just cut off; they fade based on the inverse square law
+    // We add u_light_size to the denominator to prevent "infinite" brightness when close.
+    float attenuation = u_light_intensity / (1.0 + (distance * distance) / (u_light_size * u_light_size));
+
+    // Combine with a strong baseline to ensure it's "well lit"
+    vec3 lighting = u_diffuseColor * (diffIntensity * attenuation);
     
-    // S = str * (ref . obs)^n
-    float specFactor = pow(max(dot(observerDirection, reflectedLight), 0.0), 32.0); // 32 is a standard shininess
-    vec3 specular = specFactor * u_specularColor;
+    // Add a subtle "Hemisphere" ambient so the backside isn't black
+    vec3 ambient = vec3(0.1, 0.1, 0.15); 
 
-    // Compute the final colors
-    // We multiply the base vertex color by the combined light factors
-    color = vec4(baseColor.rgb * (diffuseColor + specular), baseColor.a);
+    vec3 finalRGB = o_color.rgb * (lighting + ambient);
+    
+    // Optional: Boost saturation for that "strong" look
+    color = vec4(finalRGB * 1.2, o_color.a);
 }
