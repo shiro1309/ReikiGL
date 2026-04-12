@@ -260,7 +260,7 @@ import struct
 from typing import Tuple, cast
 
 class AdvancedBatch:
-    def __init__(self, ctx: mgl.Context, program: mgl.Program, max_meshes=10000, max_vertices=500000) -> None:
+    def __init__(self, ctx: mgl.Context, program: mgl.Program, fmt: str, attrs: Tuple[str, ...]) -> None:
         """
         Manages high-speed rendering of multiple meshes using Indirect Drawing.
         
@@ -269,11 +269,14 @@ class AdvancedBatch:
             program: The shader program.
             max_meshes: Maximum objects allowed in the batch.
             max_vertices: Maximum total vertices allowed in the VBO.
+
+            '3f 2x4 3f 4f'
+            'in_pos', 'in_uv', 'in_norm', 'in_color'
         """
         self.ctx = ctx
         self.program = program
-        self.max_meshes = max_meshes
-        self.max_vertices = max_vertices
+        self.max_meshes = 10000
+        self.max_vertices = 500000
         
         # 1. CPU Shadow Copies
         # Format: x, y, z, u, v, nx, ny, nz, r, g, b, a (12 floats)
@@ -282,8 +285,8 @@ class AdvancedBatch:
         self.meshes = {} # Stores offsets and metadata
         
         # Metadata for the VAO
-        self.fmt = '3f 2x4 3f 4f'
-        self.attrs = ('in_pos', 'in_norm', 'in_color')
+        self.fmt = fmt
+        self.attrs = attrs
         self.stride = 12 * 4 # 12 floats * 4 bytes = 48 bytes
         
     def add_mesh(self, vertices, indices, color=[1.0, 1.0, 1.0, 1.0]) -> int:
@@ -497,6 +500,7 @@ class GameObject:
         self.program = program
         
         # 1. Create Buffers for this specific mesh
+        
         self.vbo = self.ctx.buffer(np.array(vertices, dtype='f4'))
         self.ibo = self.ctx.buffer(np.array(indices, dtype='i4'))
         
