@@ -236,7 +236,7 @@ class BlenderCamera(BaseCamera):
         self.update_position()
 
 class SpaceshipCamera(BaseCamera):
-    def __init__(self, distance=15.0, height=5.0, lerp_factor=0.5) -> None:
+    def __init__(self, distance=15.0, height=5.0, lerp_factor=1.0) -> None:
         super().__init__()
         # Offset is (Side, Up, Back). 
         # -15.0 on Z puts the camera 15 units BEHIND the ship.
