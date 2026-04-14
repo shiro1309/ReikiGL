@@ -63,6 +63,30 @@ class InputManager:
         # Derived action state (logical), rebuilt every update()
         self.state: Dict[str, Dict[str, bool]] = {}
 
+    def _resolve_key(self, key_val: int | str) -> int:
+        """Helper to ensure we are looking up an integer symbol."""
+        if isinstance(key_val, str):
+            try:
+                return getattr(key, key_val.upper())
+            except AttributeError:
+                return -1 # Key not found
+        return key_val
+
+    def key_down(self, key_val: int | str) -> bool:
+        """Check if a specific key is currently held down."""
+        symbol = self._resolve_key(key_val)
+        return symbol in self._down
+
+    def key_pressed(self, key_val: int | str) -> bool:
+        """Check if a specific key was pressed this frame."""
+        symbol = self._resolve_key(key_val)
+        return symbol in self._pressed
+
+    def key_released(self, key_val: int | str) -> bool:
+        """Check if a specific key was released this frame."""
+        symbol = self._resolve_key(key_val)
+        return symbol in self._released
+
     # -------------- Context management --------------
     def add_context(self, name: str, kb: KeyBindings, activate: bool = False) -> None:
         self.context[name] = kb
