@@ -1,11 +1,14 @@
 import numpy as np
-from typing import cast
+import numpy.typing as npt
 import moderngl as mgl
-from .camera import Camera, BaseCamera
-from ..shader import import_shader
-from dataclasses import dataclass
-from ..math import transform
+from typing import cast, Tuple, Optional, List
 from abc import ABC, abstractmethod
+
+from .camera import BaseCamera
+from ..shader import import_shader
+from ..math import transform
+from .batch import Batch3D
+from .makeshape import *
 
 
 class Grid:
@@ -426,20 +429,6 @@ class Cylinder3D:
 #
 ################################################################
 
-from abc import ABC, abstractmethod
-import numpy as np
-import moderngl as mgl
-from typing import Tuple, Union, Optional
-from .batch import Batch3D
-from ..math import transform
-
-from abc import ABC, abstractmethod
-from typing import Tuple, List, Optional, Union
-import numpy as np
-import numpy.typing as npt
-import moderngl as mgl
-from icosphere import icosphere
-
 class ShapeBase(ABC):
     def __init__(
         self, 
@@ -540,7 +529,7 @@ class ShapeBase(ABC):
         # 2. Upload Uniforms
         #self.program['projection'].write(camera.get_projection_matrix().T.astype('f4'))
         #self.program['view'].write(camera.get_view_matrix().T.astype('f4'))
-        camera.apply_to_shader(self._program, "view", "projection")
+        #camera.apply_to_shader(self._program, "view", "projection")
         self._program['u_model'].write(self.matrix.T.astype('f4').copy())
         if not self.vertCol:
             norm_color = np.array(self._rgba, dtype='f4') / 255.0
@@ -634,103 +623,6 @@ class Rectangle3D(ShapeBase):
         
         self._setup_standalone(vertices, indices)
 
-import math
-
-def create_uv_sphere(radius: float, sectors: int = 20, stacks: int = 20) -> Tuple[list[float], list[int]]:
-    vertices = []
-    indices = []
-
-    # Generate Vertices
-    for i in range(stacks + 1):
-        phi = math.pi / 2 - i * math.pi / stacks
-        for j in range(sectors + 1):
-            theta = j * 2 * math.pi / sectors
-            
-            # Position (x, y, z)
-            x = radius * math.cos(phi) * math.cos(theta)
-            y = radius * math.cos(phi) * math.sin(theta)
-            z = radius * math.sin(phi)
-            
-            # For our '3f 2f 3f' format: Pos, Tex, Normal
-            # Position
-            vertices.extend([x, y, z])
-            # TexCoord (Optional 0,0 for now)
-            vertices.extend([j / sectors, i / stacks])
-            # Normal (For a sphere, normalized position is the normal)
-            mag = math.sqrt(x*x + y*y + z*z)
-            vertices.extend([x/mag, y/mag, z/mag] if mag != 0 else [0, 0, 1])
-
-    # Generate Indices
-    for i in range(stacks):
-        k1 = i * (sectors + 1)
-        k2 = k1 + sectors + 1
-        for j in range(sectors):
-            if i != 0:
-                indices.extend([k1 + j, k2 + j, k1 + j + 1])
-            if i != (stacks - 1):
-                indices.extend([k1 + j + 1, k2 + j, k2 + j + 1])
-                
-    return vertices, indices
-
-def create_icosphere_fast(radius: float, subdivisions: int = 3):
-    # 1. Get raw geometry (Vertices are Nx3, Faces are Mx3)
-    vertices, faces = icosphere(subdivisions)
-    
-    # Scale by radius
-    vertices = vertices * radius
-    
-    # 2. Generate Normals
-    # For a sphere centered at 0,0,0, the normal is just the normalized position
-    # vertices is already normalized by the library (unit sphere), 
-    # but we'll re-calculate to be safe after radius scaling.
-    norms = vertices / np.linalg.norm(vertices, axis=1, keepdims=True)
-    
-    # 3. Generate UVs (Spherical Mapping)
-    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-    u = 0.5 + np.arctan2(z, x) / (2 * np.pi)
-    v = 0.5 - np.arcsin(y / radius) / np.pi
-    uvs = np.stack([u, v], axis=1)
-    
-    # 4. Interleave the data: [Pos(3), UV(2), Norm(3)]
-    # This creates an (N, 8) array
-    packed_data = np.hstack([vertices, uvs, norms]).astype('f4')
-    
-    # 5. Flatten for your batch system
-    final_vertices = packed_data.ravel().tolist()
-    final_indices = faces.astype('u4').ravel().tolist()
-    
-    return final_vertices, final_indices
-
-def create_icosphere_fast_color(radius: float, subdivisions: int = 3):
-    vertices, faces = icosphere(subdivisions)
-    vertices = vertices * radius
-
-    # 2. Generate Normals
-    # For a sphere centered at 0,0,0, the normal is just the normalized position
-    # vertices is already normalized by the library (unit sphere), 
-    # but we'll re-calculate to be safe after radius scaling.
-    norms = vertices / np.linalg.norm(vertices, axis=1, keepdims=True)
-    
-    # 3. Generate UVs (Spherical Mapping)
-    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
-    u = 0.5 + np.arctan2(z, x) / (2 * np.pi)
-    v = 0.5 - np.arcsin(y / radius) / np.pi
-    uvs = np.stack([u, v], axis=1)
-
-    # 3.5 add color channel
-    col_channel = np.full((vertices.shape[0], 4), 1.0)
-
-    
-    # 4. Interleave the data: [Pos(3), UV(2), Norm(3)]
-    # This creates an (N, 8) array
-    packed_data = np.hstack([vertices, uvs, norms, col_channel]).astype('f4')
-    
-    # 5. Flatten for your batch system
-    final_vertices = packed_data.ravel().tolist()
-    final_indices = faces.astype('u4').ravel().tolist()
-    
-    return final_vertices, final_indices
-
 
 class Sphere(ShapeBase):
     def __init__(self, ctx, program, x, y, z, radius, subdivision_frequency: int = 4, color=(255, 255, 255, 255), batch=None, vertCol=False) -> None:
@@ -764,6 +656,27 @@ class SphereC(ShapeBase):
     def _create_vertices(self) -> None:
         # 1. Generate (pos, norm) only for a simple 3f 3f layout
         verts, indices = create_icosphere_fast_color(self._radius, self.subdivision_frequency)
+        
+        if self._batch:
+            self.mesh_id = self._batch.add_mesh(verts, indices)
+            self._update_translation()
+            # Batch color update logic here
+        self._setup_standalone(verts, indices)
+        self._update_translation()
+
+
+class Planet(ShapeBase):
+    def __init__(self, ctx, program, x, y, z, radius, octaves: int, subdivision_frequency: int = 4, batch=None, vertCol=False) -> None:
+        super().__init__(ctx, program, batch, vertCol)
+        self._x, self._y, self._z = x, y, z
+        self._radius = radius
+        self.subdivision_frequency = subdivision_frequency
+        self.octaves = octaves
+        self._create_vertices()
+
+    def _create_vertices(self) -> None:
+        # 1. Generate (pos, norm) only for a simple 3f 3f layout
+        verts, indices = create_planet_fast_color(self._radius, self.subdivision_frequency, self.octaves)
         
         if self._batch:
             self.mesh_id = self._batch.add_mesh(verts, indices)
