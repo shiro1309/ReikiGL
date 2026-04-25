@@ -384,7 +384,6 @@ def obj_color(path: str) -> Tuple[List, List]:
         
     else:
         colors.append((1.0, 1.0, 1.0, 1.0))
-    print(colors, material_to_id)
             
 
     with open(path, "r") as f:

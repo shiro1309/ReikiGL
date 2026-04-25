@@ -1,7 +1,7 @@
 import numpy as np
 from typing import Tuple
 
-def mesh_bounding_box(vao_data, indices):
+def mesh_bounding_box(vao_data):
     v, i = base_cube()
     
     pmin = vao_data.min(axis=0)[:3]

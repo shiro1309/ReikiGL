@@ -524,8 +524,6 @@ class GameObject:
 
         # Lighting uniforms
         # Adjust these values to change the look of the scene
-        if 'u_light_pos' in self.program:
-            self.program['u_light_pos'].value = (10.0, 10.0, 10.0)
 
         if 'u_camera_pos' in self.program:
             # Assuming your camera object has a 'position' attribute

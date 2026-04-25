@@ -7,38 +7,37 @@ in vec4 o_fragPosition;
 
 out vec4 color;
 
+// Simple Uniforms (Easier to update in ModernGL)
 uniform vec3 u_light_pos;
-uniform vec3 u_diffuseColor = vec3(1.0);
-uniform float u_light_size = 20.0;     // Larger = softer shadows/transitions
-uniform float u_light_intensity = 1.0; 
+uniform vec3 u_camera_pos;
+uniform vec3 u_light_color = vec3(1.0, 0.95, 0.9);
+uniform float u_light_intensity = 1.0;
 
 void main() {
+    // 1. Setup vectors
     vec3 norm = normalize(o_normal);
-    
-    // Calculate vector to light
     vec3 lightVec = u_light_pos - o_fragPosition.xyz;
-    float distance = length(lightVec);
     vec3 lightDir = normalize(lightVec);
+    vec3 viewDir = normalize(u_camera_pos - o_fragPosition.xyz);
 
-    // --- AREA LIGHT TRICK: Light Wrapping ---
-    // Instead of a hard cutoff at dot(n, l) == 0, we allow the light to 
-    // "wrap" around the object slightly, mimicking a large area source.
-    float wrap = 0.5; 
-    float diffIntensity = max(dot(norm, lightDir) + wrap, 0.0) / (1.0 + wrap);
+    // 2. Diffuse (The main "body" of the light)
+    // We don't use distance attenuation here so it doesn't fade into a dot
+    float diff = max(dot(norm, lightDir), 0.0);
+    vec3 diffuse = diff * u_light_color * u_light_intensity;
 
-    // --- AREA LIGHT TRICK: Soft Falloff ---
-    // Blender Area Lights don't just cut off; they fade based on the inverse square law
-    // We add u_light_size to the denominator to prevent "infinite" brightness when close.
-    float attenuation = u_light_intensity / (1.0 + (distance * distance) / (u_light_size * u_light_size));
+    // 3. Specular (The "Shiny" reflection from your file)
+    vec3 reflectDir = reflect(-lightDir, norm);
+    // 12.0 is the shininess power from your file. Increase it for a smaller dot.
+    float specFactor = pow(max(dot(viewDir, reflectDir), 0.0), 12.0);
+    vec3 specular = specFactor * vec3(1.0); // Pure white shine
 
-    // Combine with a strong baseline to ensure it's "well lit"
-    vec3 lighting = u_diffuseColor * (diffIntensity * attenuation);
-    
-    // Add a subtle "Hemisphere" ambient so the backside isn't black
-    vec3 ambient = vec3(0.1, 0.1, 0.15); 
+    // 4. Ambient (The baseline so the world isn't black)
+    // This is the "secret sauce" to make it look like a sunlit world
+    vec3 ambient = vec3(0.2, 0.2, 0.25); 
 
-    vec3 finalRGB = o_color.rgb * (lighting + ambient);
-    
-    // Optional: Boost saturation for that "strong" look
-    color = vec4(finalRGB * 1.2, o_color.a);
+    // 5. Final Combine
+    // We multiply the object's color by the light hitting it
+    vec3 finalRGB = o_color.rgb * (diffuse + ambient) + specular;
+
+    color = vec4(finalRGB, o_color.a);
 }

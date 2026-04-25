@@ -445,7 +445,8 @@ class ShapeBase(ABC):
         self, 
         ctx: mgl.Context, 
         program: mgl.Program, 
-        batch: Optional[Batch3D] = None
+        batch: Optional[Batch3D] = None,
+        vertCol: bool = False
     ):
         self._ctx: mgl.Context = ctx
         self._program: mgl.Program = program
@@ -460,6 +461,8 @@ class ShapeBase(ABC):
         
         # The Model Matrix (Always 4x4 float64 or float32)
         self.matrix: npt.NDArray[np.float64] = np.eye(4, dtype=np.float64)
+
+        self.vertCol = vertCol
 
         #self.color = self._rgba
         
@@ -484,11 +487,18 @@ class ShapeBase(ABC):
         
         # Link the VBO to the 'location' indices in the shader
         # 3f (in_pos) + 3f (in_norm)
-        self.vao = self._ctx.vertex_array(
-            self._program, 
-            [(vbo, '3f 2x4 3f', 'in_pos', 'in_norm')], 
-            ibo
-        )
+        if not self.vertCol:
+            self.vao = self._ctx.vertex_array(
+                self._program, 
+                [(vbo, '3f 2x4 3f', 'in_pos', 'in_norm')], 
+                ibo
+            )
+        else:
+            self.vao = self._ctx.vertex_array(
+                self._program, 
+                [(vbo, '3f 2x4 3f 4f', 'in_pos', 'in_norm', 'in_color')], 
+                ibo
+            )
 
     def _update_translation(self) -> None:
         """Uses the library's compose_model to sync the matrix."""
@@ -532,9 +542,9 @@ class ShapeBase(ABC):
         #self.program['view'].write(camera.get_view_matrix().T.astype('f4'))
         camera.apply_to_shader(self._program, "view", "projection")
         self._program['u_model'].write(self.matrix.T.astype('f4').copy())
-        
-        norm_color = np.array(self._rgba, dtype='f4') / 255.0
-        self._program['u_color'].write(norm_color)
+        if not self.vertCol:
+            norm_color = np.array(self._rgba, dtype='f4') / 255.0
+            self._program['u_color'].write(norm_color)
 
         # 3. Render
         self.vao.render(mgl.TRIANGLES)
@@ -691,9 +701,40 @@ def create_icosphere_fast(radius: float, subdivisions: int = 3):
     
     return final_vertices, final_indices
 
+def create_icosphere_fast_color(radius: float, subdivisions: int = 3):
+    vertices, faces = icosphere(subdivisions)
+    vertices = vertices * radius
+
+    # 2. Generate Normals
+    # For a sphere centered at 0,0,0, the normal is just the normalized position
+    # vertices is already normalized by the library (unit sphere), 
+    # but we'll re-calculate to be safe after radius scaling.
+    norms = vertices / np.linalg.norm(vertices, axis=1, keepdims=True)
+    
+    # 3. Generate UVs (Spherical Mapping)
+    x, y, z = vertices[:, 0], vertices[:, 1], vertices[:, 2]
+    u = 0.5 + np.arctan2(z, x) / (2 * np.pi)
+    v = 0.5 - np.arcsin(y / radius) / np.pi
+    uvs = np.stack([u, v], axis=1)
+
+    # 3.5 add color channel
+    col_channel = np.full((vertices.shape[0], 4), 1.0)
+
+    
+    # 4. Interleave the data: [Pos(3), UV(2), Norm(3)]
+    # This creates an (N, 8) array
+    packed_data = np.hstack([vertices, uvs, norms, col_channel]).astype('f4')
+    
+    # 5. Flatten for your batch system
+    final_vertices = packed_data.ravel().tolist()
+    final_indices = faces.astype('u4').ravel().tolist()
+    
+    return final_vertices, final_indices
+
+
 class Sphere(ShapeBase):
-    def __init__(self, ctx, program, x, y, z, radius, subdivision_frequency: int = 4, color=(255, 255, 255, 255), batch=None) -> None:
-        super().__init__(ctx, program, batch)
+    def __init__(self, ctx, program, x, y, z, radius, subdivision_frequency: int = 4, color=(255, 255, 255, 255), batch=None, vertCol=False) -> None:
+        super().__init__(ctx, program, batch, vertCol)
         self._x, self._y, self._z = x, y, z
         self._radius = radius
         self._rgba = color
@@ -710,5 +751,27 @@ class Sphere(ShapeBase):
             # Batch color update logic here
         self._setup_standalone(verts, indices)
         self._update_translation()
+
+class SphereC(ShapeBase):
+    def __init__(self, ctx, program, x, y, z, radius, subdivision_frequency: int = 4, color=(255, 255, 255, 255), batch=None, vertCol=False) -> None:
+        super().__init__(ctx, program, batch, vertCol)
+        self._x, self._y, self._z = x, y, z
+        self._radius = radius
+        self._rgba = color
+        self.subdivision_frequency = subdivision_frequency
+        self._create_vertices()
+
+    def _create_vertices(self) -> None:
+        # 1. Generate (pos, norm) only for a simple 3f 3f layout
+        verts, indices = create_icosphere_fast_color(self._radius, self.subdivision_frequency)
+        
+        if self._batch:
+            self.mesh_id = self._batch.add_mesh(verts, indices)
+            self._update_translation()
+            # Batch color update logic here
+        self._setup_standalone(verts, indices)
+        self._update_translation()
+
+
 
     
