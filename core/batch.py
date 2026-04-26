@@ -2,7 +2,6 @@ import numpy as np
 import moderngl as mgl
 from typing import Tuple, cast
 from .camera import BaseCamera
-
 import struct
 
 class Batch3D:
@@ -253,12 +252,6 @@ class Batch3D:
             self.vao.render_indirect(tmp_indirect, count=len(wire_comands))
 
 
-
-import numpy as np
-import moderngl as mgl
-import struct
-from typing import Tuple, cast
-
 class AdvancedBatch:
     def __init__(self, ctx: mgl.Context, program: mgl.Program, fmt: str, attrs: Tuple[str, ...]) -> None:
         """
@@ -450,6 +443,7 @@ class AdvancedBatch:
         
         self.vao.render_indirect(self.indirect_buffer, count=active_meshes)
 
+
 class SimpleInstancedBatch:
     def __init__(self, ctx, program, vertices, indices):
         self.ctx = ctx
@@ -493,6 +487,7 @@ class SimpleInstancedBatch:
             
             # Draw the mesh 'len(chunk)' times
             self.vao.render(instances=len(chunk))
+
 
 class GameObject:
     def __init__(self, ctx, program, vertices, indices) -> None:

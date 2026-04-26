@@ -520,11 +520,7 @@ class ShapeBase(ABC):
             return
 
         # 1. Update Matrix (Assuming compose_model is available)
-        self.matrix = transform.compose_model(
-            translation=(self._x, self._y, self._z),
-            euler=(0, 0, 0),
-            scale_val=(1, 1, 1)
-        )
+        self._update_translation()
 
         # 2. Upload Uniforms
         #self.program['projection'].write(camera.get_projection_matrix().T.astype('f4'))
@@ -537,6 +533,29 @@ class ShapeBase(ABC):
 
         # 3. Render
         self.vao.render(mgl.TRIANGLES)
+
+    @property
+    def x(self) -> float: return self._x
+    
+    @x.setter
+    def x(self, value) -> None:
+        self._x = value
+        self._update_translation()
+
+    def move_x(self, value) -> None:
+        self._x += value
+        self._update_translation()
+    
+    @property
+    def y(self) -> float: return self._y
+    @y.setter
+    def y(self, value) -> None:
+        self._y = value
+        self._update_translation()
+
+    def move_y(self, value) -> None:
+        self._y += value
+        self._update_translation()
 
     @property
     def z(self) -> float: return self._z
@@ -664,26 +683,69 @@ class SphereC(ShapeBase):
         self._setup_standalone(verts, indices)
         self._update_translation()
 
+from ..math import noise, quaternion
 
 class Planet(ShapeBase):
-    def __init__(self, ctx, program, x, y, z, radius, octaves: int, subdivision_frequency: int = 4, batch=None, vertCol=False) -> None:
+    def __init__(self, ctx, program, x, y, z, radius, octaves: int, persistence: float=0.5, lacunarity: float=2.0, subdivision_frequency: int = 4, batch=None, vertCol=False) -> None:
         super().__init__(ctx, program, batch, vertCol)
         self._x, self._y, self._z = x, y, z
         self._radius = radius
+        self.persistence = persistence
+        self.lacunarity = lacunarity
         self.subdivision_frequency = subdivision_frequency
         self.octaves = octaves
+
+        self.scale = np.array([1, 1, 1], dtype=np.float64)
+        self.quat = np.array([1, 0, 0, 0], dtype=np.float64)
+        self.angle = np.array([0, 1, 0], dtype=np.float64)
+
         self._create_vertices()
+
+        N_GRAD = 16
+
+        phi = np.random.uniform(0, 2*np.pi, (N_GRAD, N_GRAD, N_GRAD))
+        costheta = np.random.uniform(-1, 1, (N_GRAD, N_GRAD, N_GRAD))
+        theta = np.arccos(costheta)
+        self.grads = np.stack([
+            np.sin(theta)*np.cos(phi), 
+            np.sin(theta)*np.sin(phi), 
+            np.cos(theta)
+        ], axis=-1)
 
     def _create_vertices(self) -> None:
         # 1. Generate (pos, norm) only for a simple 3f 3f layout
-        verts, indices = create_planet_fast_color(self._radius, self.subdivision_frequency, self.octaves)
+        self.verts, self.indices = create_planet_fast_color(self._radius, self.subdivision_frequency, self.octaves)
         
         if self._batch:
-            self.mesh_id = self._batch.add_mesh(verts, indices)
+            self.mesh_id = self._batch.add_mesh(self.verts, self.indices)
             self._update_translation()
             # Batch color update logic here
-        self._setup_standalone(verts, indices)
+        self._setup_standalone(self.verts, self.indices)
         self._update_translation()
+
+    def update(self, dt) -> None:
+        active_ang = self.angle
+        theta = np.linalg.norm(active_ang) * dt
+        self.quat = quaternion.rotate_quaternion(self.quat, theta, active_ang)
+
+        self._update_translation()
+        
+
+    def _update_translation(self) -> None:
+        """Uses the library's compose_model to sync the matrix."""
+        # Ensure your compose_model returns a 4x4 numpy array
+
+        pos =  np.array([self._x, self._y, self._z], dtype=np.float64)
+
+        T = transform.translate(pos)
+        S = quaternion.quat_rotation_matrix(self.quat)
+        R = transform.scale(self.scale)
+
+        self.matrix = T @ R @ S
+        
+        
+        if self._batch and self.mesh_id is not None:
+            self._batch.set_model(str(self.mesh_id), self.matrix)
 
 
 

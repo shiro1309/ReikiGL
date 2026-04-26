@@ -7,37 +7,56 @@ in vec4 o_fragPosition;
 
 out vec4 color;
 
-// Simple Uniforms (Easier to update in ModernGL)
-uniform vec3 u_light_pos;
 uniform vec3 u_camera_pos;
+
+// --- LIGHT 1: THE SUN (Global/Directional) ---
+uniform vec3 u_light_pos;
 uniform vec3 u_light_color = vec3(1.0, 0.95, 0.9);
 uniform float u_light_intensity = 1.0;
 
+// --- LIGHT 2: SHIP INTERIOR (Local Point Light) ---
+uniform vec3  u_ship_light_pos;
+uniform vec3  u_ship_light_color = vec3(0.2, 0.6, 1.0); // Cool blue interior?
+uniform float u_ship_light_strength = 0.3;
+
 void main() {
-    // 1. Setup vectors
     vec3 norm = normalize(o_normal);
-    vec3 lightVec = u_light_pos - o_fragPosition.xyz;
-    vec3 lightDir = normalize(lightVec);
     vec3 viewDir = normalize(u_camera_pos - o_fragPosition.xyz);
 
-    // 2. Diffuse (The main "body" of the light)
-    // We don't use distance attenuation here so it doesn't fade into a dot
-    float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * u_light_color * u_light_intensity;
+    // 1. Setup a "Sun Visibility" factor (its for glass rendering)
+    // If alpha is >= 0.5, sunFactor is 1.0 (on). 
+    // If alpha is < 0.5, sunFactor is 0.0 (off).
+    float sunFactor = (o_color.a < 0.5) ? 0.0 : 1.0;
 
-    // 3. Specular (The "Shiny" reflection from your file)
-    vec3 reflectDir = reflect(-lightDir, norm);
-    // 12.0 is the shininess power from your file. Increase it for a smaller dot.
+    // --- CALCULATE SUN LIGHT ---
+    vec3 sunDir = normalize(u_light_pos - o_fragPosition.xyz);
+    float sunDiff = max(dot(norm, sunDir), 0.0);
+    vec3 sunFinal = sunDiff * u_light_color * u_light_intensity * sunFactor;
+
+    // --- CALCULATE SHIP LIGHT (with distance fade) ---
+    vec3 shipLightVec = u_ship_light_pos - o_fragPosition.xyz;
+    float distance = length(shipLightVec);
+    vec3 shipLightDir = normalize(shipLightVec);
+    
+    // Attenuation: Light drops off over distance (1.0 / dist^2)
+    float attenuation = 1.0 / (1.0 + 0.1 * distance + 0.01 * (distance * distance));
+    
+    float shipDiff = max(dot(norm, shipLightDir), 0.0);
+    vec3 shipFinal = shipDiff * u_ship_light_color * u_ship_light_strength * attenuation;
+
+    // --- SPECULAR (Combined) ---
+    // We'll just use the Sun for the main shiny spot, or add both
+    vec3 reflectDir = reflect(-sunDir, norm);
     float specFactor = pow(max(dot(viewDir, reflectDir), 0.0), 12.0);
-    vec3 specular = specFactor * vec3(1.0); // Pure white shine
+    vec3 specular = specFactor * vec3(1.0);
 
-    // 4. Ambient (The baseline so the world isn't black)
-    // This is the "secret sauce" to make it look like a sunlit world
-    vec3 ambient = vec3(0.2, 0.2, 0.25); 
+    // --- AMBIENT ---
+    vec3 ambient = vec3(0.1, 0.1, 0.12); 
 
-    // 5. Final Combine
-    // We multiply the object's color by the light hitting it
-    vec3 finalRGB = o_color.rgb * (diffuse + ambient) + specular;
+    // --- FINAL COMBINE ---
+    // Multiply object color by the sum of all light hitting it
+    vec3 totalLight = sunFinal + shipFinal + ambient;
+    vec3 finalRGB = (o_color.rgb * totalLight) + specular;
 
     color = vec4(finalRGB, o_color.a);
 }

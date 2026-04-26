@@ -2,8 +2,6 @@ import numpy as np
 from typing import Tuple, Optional
 import numpy.typing as npt
 
-
-
 def reflect(incident: npt.NDArray[np.float32], normal: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     incident /= np.linalg.norm(incident)
     normal /= np.linalg.norm(normal)
